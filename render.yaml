@@ -1,0 +1,89 @@
+# Render Blueprint — provisions Postgres, Key Value (Redis), and the FastAPI web service.
+# Connect this repo as a Blueprint in the Render dashboard and Render will
+# create everything below in one shot.
+databases:
+  - name: contacts-db
+    plan: free
+    databaseName: contacts_db
+    user: contacts
+
+services:
+  - type: keyvalue
+    name: contacts-redis
+    plan: free
+    ipAllowList: []         # internal network only
+
+  - type: web
+    name: contacts-api
+    runtime: docker
+    plan: free
+    region: frankfurt        # change to your preferred region
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # Wired automatically from the managed services above.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: contacts-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: contacts-redis
+          property: connectionString
+
+      # Generated once on first deploy, kept stable afterwards.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      # Tunables (safe defaults — override in dashboard if you want).
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: JWT_REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      - key: JWT_EMAIL_TOKEN_EXPIRE_HOURS
+        value: "24"
+      - key: JWT_RESET_PASSWORD_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REDIS_USER_CACHE_TTL_SECONDS
+        value: "900"
+
+      # CORS — set to your frontend origin once you have one.
+      - key: CORS_ORIGINS
+        value: "*"
+
+      # Public base URL is filled in automatically by Render.
+      - key: APP_BASE_URL
+        sync: false           # you'll set this to https://<service>.onrender.com after first deploy
+
+      # Mail (override in the Render dashboard with real SMTP credentials).
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MAIL_PORT
+        value: "465"
+      - key: MAIL_SERVER
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: "Contacts API"
+      - key: MAIL_STARTTLS
+        value: "False"
+      - key: MAIL_SSL_TLS
+        value: "True"
+      - key: USE_CREDENTIALS
+        value: "True"
+      - key: VALIDATE_CERTS
+        value: "True"
+
+      # Cloudinary (override in the dashboard).
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
