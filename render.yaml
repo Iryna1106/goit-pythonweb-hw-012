@@ -4,6 +4,7 @@
 databases:
   - name: contacts-db
     plan: free
+    region: frankfurt        # MUST match the web service region for internal DNS
     databaseName: contacts_db
     user: contacts
 
@@ -11,6 +12,7 @@ services:
   - type: keyvalue
     name: contacts-redis
     plan: free
+    region: frankfurt
     ipAllowList: []         # internal network only
 
   - type: web
