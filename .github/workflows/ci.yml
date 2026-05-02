@@ -13,9 +13,9 @@ jobs:
 
     env:
       JWT_SECRET_KEY: ci-secret-not-for-production
-      DATABASE_URL: sqlite:///:memory:
-      REDIS_URL: redis://localhost:6379/15
-      APP_BASE_URL: http://testserver
+      DATABASE_URL: "sqlite:///:memory:"
+      REDIS_URL: "redis://localhost:6379/15"
+      APP_BASE_URL: "http://testserver"
 
     steps:
       - uses: actions/checkout@v4
@@ -63,7 +63,7 @@ jobs:
       - name: Build Sphinx HTML (warnings → errors)
         env:
           JWT_SECRET_KEY: docs-secret
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: "sqlite:///:memory:"
         run: sphinx-build -W -b html docs/source docs/build/html
 
       - name: Upload docs artifact
