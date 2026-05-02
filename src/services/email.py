@@ -1,7 +1,13 @@
-"""Outbound email helpers (verification + password reset).
+"""Outbound email helpers.
 
-Both helpers swallow :class:`ConnectionErrors` so that registration / reset
-flows continue to work in dev environments where SMTP is not configured.
+Currently provides two helpers — :func:`send_verification_email` and
+:func:`send_password_reset_email` — that render a Jinja2 HTML template
+and dispatch the message via :mod:`fastapi_mail`. Both helpers swallow
+:class:`~fastapi_mail.errors.ConnectionErrors` so the surrounding HTTP
+flow continues to work in dev environments where SMTP is not configured;
+the failure is logged but never propagated.
+
+Templates live in :mod:`src.services.templates`.
 """
 from pathlib import Path
 
@@ -25,10 +31,22 @@ conf = ConnectionConfig(
     VALIDATE_CERTS=settings.VALIDATE_CERTS,
     TEMPLATE_FOLDER=Path(__file__).parent / "templates",
 )
+"""Process-wide :mod:`fastapi_mail` connection config built from settings."""
 
 
 async def send_verification_email(email: EmailStr, username: str, base_url: str) -> None:
-    """Send a verification email containing a tokenized confirmation link."""
+    """Send a verification email containing a tokenized confirmation link.
+
+    Args:
+        email: Recipient — also embedded in the JWT's ``sub`` claim.
+        username: Recipient's display name (used in the greeting line).
+        base_url: Public URL of the API; the verification link is
+            constructed as ``{base_url}/api/auth/confirmed_email/{token}``.
+
+    Returns:
+        None. Errors are logged and swallowed so registration does not
+        fail when SMTP is unavailable.
+    """
     try:
         token = create_email_token(str(email))
         message = MessageSchema(
@@ -44,14 +62,26 @@ async def send_verification_email(email: EmailStr, username: str, base_url: str)
         fm = FastMail(conf)
         await fm.send_message(message, template_name="verify_email.html")
     except ConnectionErrors as err:
-        # Do not crash registration if SMTP isn't configured in dev — just log.
         print(f"[email] failed to send verification email: {err}")
 
 
 async def send_password_reset_email(email: EmailStr, username: str, base_url: str) -> None:
-    """Send a password-reset email with a short-lived tokenized link."""
+    """Send a password-reset email with a short-lived single-use link.
+
+    The token is single-use — once the recipient confirms a new password,
+    its JTI is marked consumed so the link cannot be replayed.
+
+    Args:
+        email: Recipient.
+        username: Recipient's display name.
+        base_url: Public URL of the API; the reset link is constructed
+            as ``{base_url}/api/auth/reset-password/{token}``.
+
+    Returns:
+        None. Errors are logged and swallowed.
+    """
     try:
-        token = create_password_reset_token(str(email))
+        token, _jti = create_password_reset_token(str(email))
         message = MessageSchema(
             subject="Reset your password - Contacts API",
             recipients=[email],

@@ -81,3 +81,36 @@ def test_invalidate_user_calls_delete(monkeypatch):
 def test_invalidate_user_noop_without_redis(monkeypatch):
     monkeypatch.setattr(cache_service, "get_redis", lambda: None)
     cache_service.invalidate_user("x@example.com")  # must not raise
+
+
+def test_mark_password_reset_token_used_first_call_succeeds(monkeypatch):
+    """Single-use marker uses SET NX EX; first call returns truthy."""
+    client = MagicMock()
+    client.set.return_value = True  # NX succeeded — key did not exist
+    monkeypatch.setattr(cache_service, "get_redis", lambda: client)
+
+    assert cache_service.mark_password_reset_token_used("abc", 60) is True
+    args, kwargs = client.set.call_args
+    assert args[0] == "pwreset:used:abc"
+    assert kwargs.get("nx") is True
+    assert kwargs.get("ex") == 60
+
+
+def test_mark_password_reset_token_used_replay_returns_false(monkeypatch):
+    """A repeated mark for the same JTI returns False (replay detected)."""
+    client = MagicMock()
+    client.set.return_value = None  # NX failed — key already existed
+    monkeypatch.setattr(cache_service, "get_redis", lambda: client)
+    assert cache_service.mark_password_reset_token_used("abc", 60) is False
+
+
+def test_mark_password_reset_token_used_redis_offline_allows(monkeypatch):
+    """When Redis is down, fall back to permissive True so resets keep working."""
+    monkeypatch.setattr(cache_service, "get_redis", lambda: None)
+    assert cache_service.mark_password_reset_token_used("abc", 60) is True
+
+
+def test_reset_redis_client_clears_cache():
+    cache_service._client = "sentinel"  # type: ignore[assignment]
+    cache_service.reset_redis_client()
+    assert cache_service._client is None

@@ -1,7 +1,10 @@
 """Contact CRUD routes (``/api/contacts``).
 
-All endpoints require a valid access token and operate on the caller's own
-contacts only.
+All endpoints require a valid Bearer access token and operate on the
+caller's own contacts only — the active :class:`User` is injected as a
+dependency and every query in the repository layer joins on
+``user_id``, so cross-tenant data exposure is impossible at the SQL
+level.
 """
 from typing import List, Optional
 
@@ -27,7 +30,10 @@ def read_contacts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return the caller's contacts with pagination and optional partial filters."""
+    """Return the caller's contacts with pagination and optional partial filters.
+
+    All filters are case-insensitive substring matches.
+    """
     return repo_contacts.get_contacts(
         db,
         current_user,
@@ -45,7 +51,10 @@ def upcoming_birthdays(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return contacts whose birthday falls within the next ``days`` days."""
+    """Return contacts whose birthday falls within the next ``days`` days.
+
+    Year-end wrap-around is handled (window may straddle Dec/Jan).
+    """
     return repo_contacts.get_upcoming_birthdays(db, current_user, days=days)
 
 
@@ -55,7 +64,11 @@ def read_contact(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return one of the caller's contacts; 404 if missing or owned by someone else."""
+    """Return one of the caller's contacts.
+
+    404 if the contact doesn't exist or belongs to another user — both
+    cases collapse to "not found" to avoid leaking ID enumeration.
+    """
     contact = repo_contacts.get_contact(db, current_user, contact_id)
     if contact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
@@ -68,7 +81,10 @@ def create_contact(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new contact owned by the caller; 409 if the email is already used."""
+    """Create a new contact owned by the caller.
+
+    409 if the caller already has a contact with the same email.
+    """
     if repo_contacts.get_contact_by_email(db, current_user, body.email):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -84,7 +100,11 @@ def update_contact(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Partially update a caller-owned contact."""
+    """Partially update a caller-owned contact.
+
+    409 if the new email collides with another contact's email; 404 if
+    the contact doesn't exist or isn't owned by the caller.
+    """
     if body.email:
         existing = repo_contacts.get_contact_by_email(db, current_user, body.email)
         if existing and existing.id != contact_id:

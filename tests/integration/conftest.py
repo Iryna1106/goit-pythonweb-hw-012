@@ -13,6 +13,22 @@ def disable_cache(monkeypatch):
     monkeypatch.setattr(cache_service, "get_cached_user", lambda email: None)
     monkeypatch.setattr(cache_service, "cache_user", lambda user, ttl_seconds=None: None)
     monkeypatch.setattr(cache_service, "invalidate_user", lambda email: None)
+    monkeypatch.setattr(
+        cache_service, "mark_password_reset_token_used", lambda jti, ttl: True
+    )
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limit():
+    """Turn off SlowAPI for the test session — tests intentionally burst /me."""
+    from src.api.users import limiter
+
+    previous = limiter.enabled
+    limiter.enabled = False
+    try:
+        yield
+    finally:
+        limiter.enabled = previous
 
 
 @pytest.fixture(autouse=True)

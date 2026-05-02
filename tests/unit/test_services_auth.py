@@ -33,9 +33,15 @@ def test_create_and_decode_email_token():
 
 
 def test_create_and_decode_password_reset_token():
-    token = auth_service.create_password_reset_token("alice@example.com")
+    token, jti = auth_service.create_password_reset_token("alice@example.com")
     sub = auth_service.decode_token(token, auth_service.RESET_PASSWORD_TOKEN_SCOPE)
     assert sub == "alice@example.com"
+    assert jti and len(jti) >= 16
+
+    # decode_token_full also works and exposes jti.
+    payload = auth_service.decode_token_full(token, auth_service.RESET_PASSWORD_TOKEN_SCOPE)
+    assert payload["sub"] == "alice@example.com"
+    assert payload["jti"] == jti
 
 
 def test_decode_token_rejects_wrong_scope():

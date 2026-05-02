@@ -1,14 +1,27 @@
 Contacts REST API
 =================
 
-REST API для зберігання та управління контактами на FastAPI + SQLAlchemy +
-PostgreSQL з аутентифікацією JWT (access/refresh), верифікацією email,
-скиданням пароля, ролями користувачів (``user``/``admin``) та кешуванням
-поточного користувача через Redis.
+REST API для зберігання та управління контактами на FastAPI 2.0.
+Підтримує JWT з парою токенів (access + refresh), верифікацію email,
+скидання пароля з одноразовими токенами, ролі користувачів
+(``user`` / ``admin``) з адмін-only маршрутами та кешування поточного
+користувача в Redis.
+
+Зміст
+-----
 
 .. toctree::
    :maxdepth: 2
-   :caption: Reference
+   :caption: Огляд
+
+   overview
+   auth_flow
+   testing
+   deployment
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
 
    modules
 

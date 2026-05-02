@@ -146,7 +146,7 @@ def test_password_reset_request_always_200(client, confirmed_user):
 
 
 def test_password_reset_confirm_changes_password(client, confirmed_user, db_session):
-    token = auth_service.create_password_reset_token(confirmed_user.email)
+    token, _jti = auth_service.create_password_reset_token(confirmed_user.email)
     resp = client.post(
         "/api/auth/reset-password/confirm",
         json={"token": token, "new_password": "newpass12"},
