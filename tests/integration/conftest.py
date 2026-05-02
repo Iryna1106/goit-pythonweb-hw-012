@@ -44,10 +44,16 @@ def stub_outbound(monkeypatch):
         "src.services.email.send_password_reset_email", _noop_email, raising=False
     )
     monkeypatch.setattr(
+        "src.services.email.send_password_changed_notice", _noop_email, raising=False
+    )
+    monkeypatch.setattr(
         "src.api.auth.send_verification_email", _noop_email, raising=False
     )
     monkeypatch.setattr(
         "src.api.auth.send_password_reset_email", _noop_email, raising=False
+    )
+    monkeypatch.setattr(
+        "src.api.auth.send_password_changed_notice", _noop_email, raising=False
     )
 
     def _fake_upload(self, file, username):

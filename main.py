@@ -20,9 +20,9 @@ from slowapi.errors import RateLimitExceeded
 
 from src.api.auth import router as auth_router
 from src.api.contacts import router as contacts_router
-from src.api.users import limiter as users_limiter
 from src.api.users import router as users_router
 from src.conf.config import settings
+from src.services.rate_limit import limiter
 
 app = FastAPI(
     title="Contacts REST API",
@@ -35,7 +35,7 @@ app = FastAPI(
     version="2.1.0",
 )
 
-app.state.limiter = users_limiter
+app.state.limiter = limiter
 
 
 @app.exception_handler(RateLimitExceeded)

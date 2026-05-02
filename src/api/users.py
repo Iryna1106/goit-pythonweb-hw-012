@@ -18,8 +18,6 @@ returns 403.
 from typing import List
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from src.database.db import get_db
@@ -27,12 +25,10 @@ from src.database.models import User
 from src.repository import users as repo_users
 from src.schemas.users import UserResponse, UserRoleUpdate
 from src.services.auth import get_current_user, require_admin
+from src.services.rate_limit import limiter
 from src.services.upload_file import UploadFileService
 
 router = APIRouter(prefix="/users", tags=["users"])
-
-limiter = Limiter(key_func=get_remote_address)
-"""Per-IP rate limiter shared with the FastAPI app via ``app.state.limiter``."""
 
 
 @router.get("/me", response_model=UserResponse)

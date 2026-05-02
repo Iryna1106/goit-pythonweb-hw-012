@@ -287,17 +287,63 @@ def decode_token_full(token: str, expected_scope: str) -> dict:
     return payload
 
 
+def _ensure_token_not_revoked(user: User, iat_ts: Optional[int]) -> None:
+    """Reject tokens minted before the user's most recent password change.
+
+    When a user changes their password (typically through the reset
+    flow), :attr:`User.password_changed_at` is bumped to ``now``. Any
+    JWT — access or refresh — whose ``iat`` (issued-at) claim predates
+    that timestamp is rejected with 401. This is the
+    "session-invalidation-after-reset" property that makes a stolen
+    token useless once the legitimate user has rotated their password.
+
+    Args:
+        user: The user the token claims to authenticate.
+        iat_ts: The token's ``iat`` claim (UNIX seconds). Older tokens
+            without an ``iat`` (legacy) are passed through unchanged.
+
+    Raises:
+        fastapi.HTTPException: 401 ``"Token has been revoked"`` if the
+            token predates the password change.
+    """
+    if iat_ts is None or user.password_changed_at is None:
+        return
+    iat = datetime.fromtimestamp(int(iat_ts), tz=timezone.utc)
+    # SQLite drops timezone info even on a tz-aware column; assume UTC
+    # so the comparison against the always-tz-aware iat works on both
+    # SQLite (tests) and Postgres (prod).
+    pwd_changed = user.password_changed_at
+    if pwd_changed.tzinfo is None:
+        pwd_changed = pwd_changed.replace(tzinfo=timezone.utc)
+    # Allow a 1-second slack to absorb truncation when iat is whole seconds
+    # but password_changed_at has microseconds.
+    if iat + timedelta(seconds=1) < pwd_changed:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Resolve the authenticated user from a Bearer access token.
 
-    The lookup goes **cache-first**: the user is fetched from Redis (keyed
-    by email) and only on a cache miss does the function hit the database.
-    On a miss, the freshly-loaded :class:`User` is also written back to
-    the cache, so subsequent requests during the TTL window are
-    cache-served.
+    Two layers of validation run in sequence:
+
+    1. **Token shape** — :func:`decode_token_full` checks signature,
+       ``exp``, and that ``scope == "access_token"``.
+    2. **Token freshness** — after the user is resolved (cache or DB),
+       :func:`_ensure_token_not_revoked` verifies that the token's
+       ``iat`` is not older than the user's last password change.
+
+    Lookups go **cache-first**: the user is fetched from Redis (keyed
+    by email) and only on a cache miss does the function hit the
+    database. On a miss, the freshly-loaded :class:`User` is also
+    written back to the cache, so subsequent requests during the TTL
+    window are cache-served.
 
     Args:
         token: Bearer token extracted from the ``Authorization`` header by
@@ -308,8 +354,9 @@ def get_current_user(
         The authenticated :class:`User` instance.
 
     Raises:
-        fastapi.HTTPException: 401 on any auth failure (bad token, missing
-            user, etc.).
+        fastapi.HTTPException: 401 on any auth failure — bad token,
+            missing user, or token revoked by a more-recent password
+            change.
 
     Example:
         Use it as a FastAPI dependency::
@@ -321,10 +368,13 @@ def get_current_user(
             def me(current_user = Depends(get_current_user)):
                 return current_user
     """
-    email = decode_token(token, ACCESS_TOKEN_SCOPE)
+    payload = decode_token_full(token, ACCESS_TOKEN_SCOPE)
+    email = payload["sub"]
+    iat_ts = payload.get("iat")
 
     cached = user_cache.get_cached_user(email)
     if cached is not None:
+        _ensure_token_not_revoked(cached, iat_ts)
         return cached
 
     # Avoid circular import: import lazily.
@@ -337,6 +387,7 @@ def get_current_user(
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    _ensure_token_not_revoked(user, iat_ts)
     user_cache.cache_user(user)
     return user
 

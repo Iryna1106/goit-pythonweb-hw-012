@@ -32,16 +32,22 @@ from src.schemas.users import (
     UserResponse,
 )
 from src.services import cache as user_cache
+from src.services.rate_limit import limiter
 from src.services.auth import (
     REFRESH_TOKEN_SCOPE,
     RESET_PASSWORD_TOKEN_SCOPE,
+    _ensure_token_not_revoked,
     create_access_token,
     create_refresh_token,
     decode_token,
     decode_token_full,
     verify_password,
 )
-from src.services.email import send_password_reset_email, send_verification_email
+from src.services.email import (
+    send_password_changed_notice,
+    send_password_reset_email,
+    send_verification_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -158,7 +164,8 @@ def refresh(body: RefreshTokenRequest, db: Session = Depends(get_db)):
             expired, has the wrong scope, or refers to a user that no
             longer exists.
     """
-    email = decode_token(body.refresh_token, REFRESH_TOKEN_SCOPE)
+    payload = decode_token_full(body.refresh_token, REFRESH_TOKEN_SCOPE)
+    email = payload["sub"]
     user = repo_users.get_user_by_email(db, email)
     if user is None:
         raise HTTPException(
@@ -166,6 +173,7 @@ def refresh(body: RefreshTokenRequest, db: Session = Depends(get_db)):
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    _ensure_token_not_revoked(user, payload.get("iat"))
     return TokenResponse(
         access_token=create_access_token(subject=user.email),
         refresh_token=create_refresh_token(subject=user.email),
@@ -236,10 +244,11 @@ async def request_email(
 
 
 @router.post("/reset-password")
+@limiter.limit("3/hour")
 async def request_password_reset(
+    request: Request,
     body: RequestEmail,
     background_tasks: BackgroundTasks,
-    request: Request,
     db: Session = Depends(get_db),
 ):
     """Start the password-reset flow.
@@ -249,10 +258,14 @@ async def request_password_reset(
     short-lived (default 30 min) JWT is generated and emailed to them
     by :func:`~src.services.email.send_password_reset_email`.
 
+    **Rate-limited** to 3 requests per hour per IP to prevent abuse
+    (annoyance attacks where someone spams reset emails to a victim).
+
     Args:
+        request: Active request — used by SlowAPI to derive the IP key
+            and to build the email-link base URL.
         body: Payload with the email to reset.
         background_tasks: Scheduler used to send the email asynchronously.
-        request: Active request (used to compute the email link base URL).
         db: Database session.
 
     Returns:
@@ -268,7 +281,12 @@ async def request_password_reset(
 
 
 @router.post("/reset-password/confirm", response_model=UserResponse)
-def confirm_password_reset(body: ResetPasswordConfirm, db: Session = Depends(get_db)):
+def confirm_password_reset(
+    body: ResetPasswordConfirm,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """Set a new password using a valid, **single-use** reset token.
 
     The token's ``jti`` claim is recorded in Redis the first time it is
@@ -323,4 +341,10 @@ def confirm_password_reset(body: ResetPasswordConfirm, db: Session = Depends(get
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid reset request",
         )
+
+    # Notify the user out-of-band so they can detect unauthorised resets.
+    base_url = settings.APP_BASE_URL or str(request.base_url)
+    background_tasks.add_task(
+        send_password_changed_notice, user.email, user.username, base_url
+    )
     return user

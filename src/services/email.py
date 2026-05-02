@@ -65,6 +65,35 @@ async def send_verification_email(email: EmailStr, username: str, base_url: str)
         print(f"[email] failed to send verification email: {err}")
 
 
+async def send_password_changed_notice(email: EmailStr, username: str, base_url: str) -> None:
+    """Notify a user that their password was just changed.
+
+    Sent immediately after a successful ``/reset-password/confirm`` call.
+    Lets the legitimate account owner notice unauthorised resets and
+    react. Errors are logged and swallowed.
+
+    Args:
+        email: Recipient.
+        username: Recipient's display name.
+        base_url: Public URL of the API; used for the "reset again"
+            recovery link in the email body.
+    """
+    try:
+        message = MessageSchema(
+            subject="Your password was changed - Contacts API",
+            recipients=[email],
+            template_body={
+                "host": base_url.rstrip("/"),
+                "username": username,
+            },
+            subtype=MessageType.html,
+        )
+        fm = FastMail(conf)
+        await fm.send_message(message, template_name="password_changed_notice.html")
+    except ConnectionErrors as err:
+        print(f"[email] failed to send password-changed notice: {err}")
+
+
 async def send_password_reset_email(email: EmailStr, username: str, base_url: str) -> None:
     """Send a password-reset email with a short-lived single-use link.
 

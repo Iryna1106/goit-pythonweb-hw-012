@@ -103,6 +103,9 @@ def _serialize_user(user: User) -> str:
             "avatar": user.avatar,
             "confirmed": user.confirmed,
             "role": user.role.value if isinstance(user.role, UserRole) else str(user.role),
+            "password_changed_at": (
+                user.password_changed_at.isoformat() if user.password_changed_at else None
+            ),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None,
         }
@@ -120,6 +123,11 @@ def _deserialize_user(raw: str) -> User:
     user.avatar = data.get("avatar")
     user.confirmed = data["confirmed"]
     user.role = UserRole(data.get("role", UserRole.USER.value))
+    user.password_changed_at = (
+        datetime.fromisoformat(data["password_changed_at"])
+        if data.get("password_changed_at")
+        else None
+    )
     user.created_at = (
         datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None
     )

@@ -39,6 +39,9 @@ class User(Base):
         default=UserRole.USER,
         nullable=False,
     )
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

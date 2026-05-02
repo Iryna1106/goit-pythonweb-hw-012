@@ -15,6 +15,7 @@ Responsibilities:
   invalidating the Redis cache for that user so subsequent requests
   observe the new state.
 """
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from libgravatar import Gravatar
@@ -161,9 +162,13 @@ def update_avatar(db: Session, email: str, url: str) -> Optional[User]:
 def update_password(db: Session, email: str, new_password: str) -> Optional[User]:
     """Hash and store a new password for the user identified by ``email``.
 
-    Used by :func:`~src.api.auth.confirm_password_reset`. Invalidates the
-    cached user row so a stale entry is not served after the password
-    rotation.
+    Also bumps :attr:`User.password_changed_at` to ``now``. The auth
+    layer rejects any JWT (access or refresh) whose ``iat`` predates
+    this timestamp, so previously-issued tokens — including any that
+    might have been stolen — are immediately useless.
+
+    The cached user row is invalidated so the new ``password_changed_at``
+    becomes visible on the next request.
 
     Args:
         db: Active session.
@@ -178,6 +183,7 @@ def update_password(db: Session, email: str, new_password: str) -> Optional[User
     if user is None:
         return None
     user.hashed_password = get_password_hash(new_password)
+    user.password_changed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
     user_cache.invalidate_user(email)
